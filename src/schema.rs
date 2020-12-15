@@ -303,29 +303,11 @@ impl RecordField {
 #[derive(Debug, Clone)]
 pub struct UnionSchema {
     pub(crate) schemas: Vec<Schema>,
-    // Used to ensure uniqueness of schema inputs, and provide constant time finding of the
-    // schema index given a value.
-    // **NOTE** that this approach does not work for named types, and will have to be modified
-    // to support that. A simple solution is to also keep a mapping of the names used.
-    variant_index: HashMap<SchemaKind, usize>,
 }
 
 impl UnionSchema {
     pub(crate) fn new(schemas: Vec<Schema>) -> AvroResult<Self> {
-        let mut vindex = HashMap::new();
-        for (i, schema) in schemas.iter().enumerate() {
-            if let Schema::Union(_) = schema {
-                return Err(Error::GetNestedUnion);
-            }
-            let kind = SchemaKind::from(schema);
-            if vindex.insert(kind, i).is_some() {
-                return Err(Error::GetUnionDuplicate);
-            }
-        }
-        Ok(UnionSchema {
-            schemas,
-            variant_index: vindex,
-        })
+        Ok(UnionSchema {schemas})
     }
 
     /// Returns a slice to all variants of this schema.
@@ -341,11 +323,12 @@ impl UnionSchema {
     /// Optionally returns a reference to the schema matched by this value, as well as its position
     /// within this union.
     pub fn find_schema(&self, value: &types::Value) -> Option<(usize, &Schema)> {
-        let type_index = &SchemaKind::from(value);
-        self.variant_index
-            .get(type_index)
-            .copied()
-            .map(|i| (i, &self.schemas[i]))
+        for (i, _) in self.schemas.iter().enumerate() {
+            if value.validate(&self.schemas[i]) {
+                return Some((i, &self.schemas[i]))
+            }
+        }
+        None
     }
 }
 
